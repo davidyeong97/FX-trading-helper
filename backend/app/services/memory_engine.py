@@ -154,3 +154,38 @@ def aggregate_stats(db: Session, recent_lessons: int = 10) -> dict:
             for le, tr in lessons
         ],
     }
+
+
+LOSS_PENALTY_PER_LOSS = 8.0
+MAX_LOSS_PENALTY = 30.0
+WIN_CREDIT_PER_WIN = 3.0
+SETUP_LOOKBACK = 10
+
+
+def setup_penalty(db: Session, symbol: str, timeframe: str, signal: str) -> dict:
+    """Confidence penalty derived from recent resolved trades on the same symbol/timeframe/signal."""
+    rows = db.execute(
+        select(TradeLog.outcome_status)
+        .where(
+            TradeLog.symbol == symbol,
+            TradeLog.timeframe == timeframe,
+            TradeLog.signal == signal,
+            TradeLog.outcome_status.in_(_RESOLVED),
+        )
+        .order_by(TradeLog.created_at.desc(), TradeLog.id.desc())
+        .limit(SETUP_LOOKBACK)
+    ).scalars().all()
+    losses = sum(1 for r in rows if r == OutcomeStatus.LOSS)
+    wins = len(rows) - losses
+    penalty = min(MAX_LOSS_PENALTY, max(0.0, losses * LOSS_PENALTY_PER_LOSS - wins * WIN_CREDIT_PER_WIN))
+    return {"similar_wins": wins, "similar_losses": losses, "penalty": penalty}
+
+
+def adjust_confidence(db: Session, symbol: str, timeframe: str, signal: str, confidence: float) -> tuple[float, dict]:
+    """Lower confidence for BUY/SELL setups that previously lost; HOLD is untouched."""
+    info = setup_penalty(db, symbol, timeframe, signal) if signal in ("BUY", "SELL") else {
+        "similar_wins": 0, "similar_losses": 0, "penalty": 0.0}
+    adjusted = round(max(0.0, confidence - info["penalty"]), 2)
+    info["raw_confidence"] = confidence
+    info["adjusted_confidence"] = adjusted
+    return adjusted, info

@@ -62,6 +62,10 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
     except vision_service.VisionServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    confidence, adjustment = memory_engine.adjust_confidence(
+        db, req.symbol, req.timeframe, vision["signal"], float(vision["confidence"])
+    )
+
     sentiment = search_service.get_sentiment(req.symbol)
     sentiment_dict = sentiment.model_dump() if hasattr(sentiment, "model_dump") else dict(sentiment)
 
@@ -69,7 +73,7 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
         symbol=req.symbol,
         timeframe=req.timeframe,
         signal=vision["signal"],
-        confidence=float(vision["confidence"]),
+        confidence=confidence,
         entry=vision.get("entry"),
         sl=vision.get("stop_loss"),
         tp=vision.get("take_profit"),
@@ -94,5 +98,5 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
         rationale=vision.get("rationale", ""),
         structure=vision.get("structure", {}),
         sentiment=sentiment_dict,
-        memory_insights=memory.to_dict(),
+        memory_insights={**memory.to_dict(), "confidence_adjustment": adjustment},
     )
