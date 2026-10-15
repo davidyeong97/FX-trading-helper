@@ -13,6 +13,7 @@
 
   <button id="analyze-btn" class="primary">Analyze Active Chart</button>
   <div id="status" class="status muted" role="status"></div>
+  <div id="error" class="status error" role="alert" hidden></div>
 
   <section class="card signal" id="signal-card">
     <div class="signal-row">
@@ -47,6 +48,12 @@
     </div>
     <div id="outcome" class="muted small"></div>
   </section>
+
+  <details class="card">
+    <summary>Settings</summary>
+    <label class="small muted" for="backend-url">Backend base URL</label>
+    <input id="backend-url" type="text" value="http://localhost:8000" spellcheck="false">
+  </details>
 
   <script src="sidepanel.js"></script>
 </body>
