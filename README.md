@@ -94,10 +94,14 @@ uvicorn app.main:app --reload --port 8000
 
 ### 2. Load Chrome Extension
 
+```
+
 1. Open Chrome and navigate to `chrome://extensions/`.
 2. Enable **Developer mode** (toggle in top right).
 3. Click **Load unpacked** and select the `FX-trading-helper/extension` directory.
 4. Pin the **FX Trading Helper** extension and open the Side Panel on any chart page.
+
+```
 
 ---
 
@@ -111,14 +115,11 @@ This software is for educational and research purposes only. Do not use this too
 
 Distributed under the MIT License. See `LICENSE` for details.
 
-```
-
 ---
 
 ## 🗺️ Project Structure & Implementation Plan
 
 ### 📁 Directory Tree
-
 
 ```
 
