@@ -105,3 +105,52 @@ def _format(ctx: MemoryContext) -> str:
 def enrich_prompt(system_prompt: str, memory_text: str) -> str:
     """Prepend memory context to the vision system prompt (no-op when empty)."""
     return f"{memory_text}\n\n{system_prompt}" if memory_text else system_prompt
+
+
+def aggregate_stats(db: Session, recent_lessons: int = 10) -> dict:
+    """Win rate overall and grouped by symbol/timeframe, plus most recent lessons."""
+    rows = db.execute(
+        select(TradeLog.symbol, TradeLog.timeframe, TradeLog.outcome_status).where(
+            TradeLog.outcome_status.in_(_RESOLVED)
+        )
+    ).all()
+    groups: dict[tuple[str, str], list[int]] = {}
+    for symbol, tf, status in rows:
+        g = groups.setdefault((symbol, tf), [0, 0])
+        g[0 if status == OutcomeStatus.WIN else 1] += 1
+
+    def _entry(wins: int, losses: int) -> dict:
+        total = wins + losses
+        return {"wins": wins, "losses": losses, "total": total,
+                "win_rate": wins / total if total else None}
+
+    by_group = [
+        {"symbol": s, "timeframe": tf, **_entry(w, l)}
+        for (s, tf), (w, l) in sorted(groups.items())
+    ]
+    tw = sum(g[0] for g in groups.values())
+    tl = sum(g[1] for g in groups.values())
+
+    lessons = db.execute(
+        select(LessonLog, TradeLog)
+        .join(TradeLog, LessonLog.trade_id == TradeLog.id)
+        .order_by(LessonLog.created_at.desc(), LessonLog.id.desc())
+        .limit(recent_lessons)
+    ).all()
+    return {
+        "overall": _entry(tw, tl),
+        "by_symbol_timeframe": by_group,
+        "recent_lessons": [
+            {
+                "id": le.id,
+                "trade_id": tr.id,
+                "symbol": tr.symbol,
+                "timeframe": tr.timeframe,
+                "outcome": tr.outcome_status.value,
+                "mistake_category": le.mistake_category,
+                "reason": le.post_mortem_reason,
+                "created_at": le.created_at.isoformat(),
+            }
+            for le, tr in lessons
+        ],
+    }

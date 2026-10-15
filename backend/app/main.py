@@ -23,5 +23,8 @@ def health():
 
 
 # TODO: register analyze router (app.api.analyze) at /api/v1/analyze
-# TODO: register trades router (app.api.trades) at /api/v1/trades
-# TODO: register memory router (app.api.memory) at /api/v1/memory
+from app.api import memory as memory_api  # noqa: E402
+from app.api import trades as trades_api  # noqa: E402
+
+app.include_router(trades_api.router)
+app.include_router(memory_api.router)
