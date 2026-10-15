@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FX Trading Helper</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>FX Trading Helper</h1>
+    <span id="pair-meta" class="muted">— / —</span>
+  </header>
+
+  <button id="analyze-btn" class="primary">Analyze Active Chart</button>
+  <div id="status" class="status muted" role="status"></div>
+  <div id="error" class="status error" role="alert" hidden></div>
+
+  <section class="card signal" id="signal-card">
+    <div class="signal-row">
+      <span id="signal-badge" class="badge hold">HOLD</span>
+      <span class="muted">Confidence <strong id="confidence-text">0%</strong></span>
+    </div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="confidence-bar-wrap">
+      <div id="confidence-bar" class="bar-fill" style="width:0%"></div>
+    </div>
+  </section>
+
+  <details class="card" id="trade-details" open>
+    <summary>Trade Details</summary>
+    <dl class="grid">
+      <dt>Entry</dt><dd id="d-entry">—</dd>
+      <dt>Stop Loss</dt><dd id="d-sl">—</dd>
+      <dt>Take Profit</dt><dd id="d-tp">—</dd>
+      <dt>R:R</dt><dd id="d-rr">—</dd>
+    </dl>
+  </details>
+
+  <section class="card">
+    <h2>AI Memory Log</h2>
+    <ul id="memory-log" class="log"><li class="muted">No insights yet.</li></ul>
+  </section>
+
+  <section class="card">
+    <h2>Mark Outcome</h2>
+    <div class="row">
+      <button id="win-btn" class="win" disabled>Mark Win</button>
+      <button id="loss-btn" class="loss" disabled>Mark Loss</button>
+    </div>
+    <div id="outcome" class="muted small"></div>
+  </section>
+
+  <details class="card">
+    <summary>Settings</summary>
+    <label class="small muted" for="backend-url">Backend base URL</label>
+    <input id="backend-url" type="text" value="http://localhost:8000" spellcheck="false">
+  </details>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+:root{--bg:#0f1419;--card:#1a212b;--border:#2a3441;--text:#e6e9ee;--muted:#8b95a5;--buy:#26a69a;--sell:#ef5350;--hold:#f0b90b;--accent:#2962ff}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif}
+h1{font-size:16px;margin:0}h2{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.app-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.muted{color:var(--muted)}.small{font-size:12px}
+button{font:inherit;border:0;border-radius:6px;padding:8px 12px;cursor:pointer;color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{width:100%;background:var(--accent);padding:12px;font-weight:600}
+button.win{background:var(--buy)}button.loss{background:var(--sell)}
+.status{min-height:18px;margin:6px 0;font-size:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:12px}
+.signal-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.badge{padding:4px 14px;border-radius:6px;font-weight:700;font-size:18px;color:#000}
+.badge.buy{background:var(--buy)}.badge.sell{background:var(--sell)}.badge.hold{background:var(--hold)}
+.bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;background:var(--accent);transition:width .3s}
+summary{cursor:pointer;font-weight:600}
+.grid{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:10px 0 0}
+.grid dt{color:var(--muted)}.grid dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.log{list-style:none;margin:0;padding:0}.log li{padding:6px 0;border-bottom:1px solid var(--border)}.log li:last-child{border:0}
+.row{display:flex;gap:8px}.row button{flex:1}
+
+.status.error { color: #ef5350; }
+.status[hidden] { display: none; }
+#backend-url { width: 100%; box-sizing: border-box; margin-top: 4px; }
