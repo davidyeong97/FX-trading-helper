@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_PROVIDER: str = "gemini"
     SEARCH_API_KEY: str = ""
+    SEARCH_TIMEOUT_SECONDS: float = 5.0
+    SEARCH_MAX_RESULTS: int = 6
+    SEARCH_CACHE_TTL_SECONDS: int = 120
     DB_URL: str = "sqlite:///./fx_helper.db"
     CORS_ALLOW_ORIGINS: str = "*"
 
