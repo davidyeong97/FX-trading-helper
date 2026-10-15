@@ -20,3 +20,7 @@ summary{cursor:pointer;font-weight:600}
 .grid dt{color:var(--muted)}.grid dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .log{list-style:none;margin:0;padding:0}.log li{padding:6px 0;border-bottom:1px solid var(--border)}.log li:last-child{border:0}
 .row{display:flex;gap:8px}.row button{flex:1}
+
+.status.error { color: #ef5350; }
+.status[hidden] { display: none; }
+#backend-url { width: 100%; box-sizing: border-box; margin-top: 4px; }
