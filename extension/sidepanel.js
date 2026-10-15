@@ -78,6 +78,33 @@
     }
   }
 
+  const MAX_IMAGE_WIDTH = 1280;
+  const JPEG_QUALITY = 0.72;
+
+  async function compressImage(dataUrl) {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const bmp = await createImageBitmap(blob);
+      const scale = Math.min(1, MAX_IMAGE_WIDTH / bmp.width);
+      const w = Math.round(bmp.width * scale);
+      const h = Math.round(bmp.height * scale);
+      const canvas = new OffscreenCanvas(w, h);
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, w, h);
+      g.drawImage(bmp, 0, 0, w, h);
+      const out = await canvas.convertToBlob({ type: "image/jpeg", quality: JPEG_QUALITY });
+      const buf = new Uint8Array(await out.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      }
+      return btoa(bin);
+    } catch (_) {
+      return dataUrl.replace(/^data:image\/\w+;base64,/, "");
+    }
+  }
+
   function getContext(tab) {
     return new Promise((resolve) => {
       try {
@@ -149,7 +176,7 @@
     try {
       const tab = await getActiveTab();
       const dataUrl = await captureChart(tab);
-      const image_base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+      const image_base64 = await compressImage(dataUrl);
       setLoading(true, "Reading symbol and timeframe…");
       const ctx = await getContext(tab);
       const symbol = ctx && ctx.symbol;

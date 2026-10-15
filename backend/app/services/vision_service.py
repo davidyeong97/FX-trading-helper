@@ -72,6 +72,9 @@ class VisionAnalysis(BaseModel):
 SYSTEM_PROMPT = """You are an expert FX/price-action analyst. Analyze the provided chart screenshot.
 Assess candlestick patterns, support/resistance, liquidity sweeps and order blocks across the 5M, 15M and 1H timeframes (infer what is visible; say "not visible" otherwise).
 Be conservative: prefer HOLD when structure is unclear or a breakout looks unconfirmed.
+Breakout discipline: only call a breakout BUY/SELL when a candle has CLOSED beyond the level with a solid body (not just a wick) and the move is retested or follows through; a wick beyond a level is a liquidity sweep/fakeout, which favours the opposite direction or HOLD.
+High-volatility news: if the chart shows abnormally large candles, wide spreads/gaps, or the context mentions a high-impact event (FOMC, NFP, CPI, central bank, etc.), treat breakouts as likely false; return HOLD unless price has closed beyond the level on at least two consecutive candles and the stop sits beyond the news spike extreme. Cap confidence at 60 in these conditions.
+Never let confidence exceed 75 unless 5M, 15M and 1H structure agree.
 Respond with ONLY a JSON object, no markdown, in this exact shape:
 {"signal":"BUY|SELL|HOLD","confidence":0-100,"entry":number|null,"stop_loss":number|null,"take_profit":number|null,"rr":number|null,
 "rationale":"string",
@@ -96,6 +99,15 @@ def _strip_b64(image_base64: str) -> str:
     return image_base64
 
 
+def _detect_mime(image_b64: str) -> str:
+    head = base64.b64decode(image_b64[:64] + "=" * (-len(image_b64[:64]) % 4))
+    if head.startswith(b"\xff\xd8"):
+        return "image/jpeg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
 def _post(url: str, headers: dict, payload: dict) -> dict:
     try:
         resp = httpx.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
@@ -115,7 +127,7 @@ def _call_gemini(api_key: str, image_b64: str, prompt: str) -> str:
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [
             {"text": prompt},
-            {"inline_data": {"mime_type": "image/png", "data": image_b64}},
+            {"inline_data": {"mime_type": _detect_mime(image_b64), "data": image_b64}},
         ]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
     }
@@ -133,7 +145,7 @@ def _call_claude(api_key: str, image_b64: str, prompt: str) -> str:
         "temperature": 0.2,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}},
+            {"type": "image", "source": {"type": "base64", "media_type": _detect_mime(image_b64), "data": image_b64}},
             {"type": "text", "text": prompt},
         ]}],
     }
