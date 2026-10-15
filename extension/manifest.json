@@ -3,8 +3,41 @@
   "name": "FX Trading Helper",
   "version": "0.1.0",
   "description": "Context-aware AI trading assistant in the Chrome side panel.",
-  "permissions": ["sidePanel", "activeTab", "scripting", "tabs", "storage"],
-  "action": { "default_title": "FX Trading Helper" },
-  "side_panel": { "default_path": "sidepanel.html" },
-  "background": { "service_worker": "background.js" }
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "storage"
+  ],
+  "action": {
+    "default_title": "FX Trading Helper"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tradingview.com/*",
+        "*://*.binance.com/*",
+        "*://*.binance.us/*",
+        "*://*.webull.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "host_permissions": [
+    "*://*.tradingview.com/*",
+    "*://*.binance.com/*",
+    "*://*.binance.us/*",
+    "*://*.webull.com/*"
+  ]
 }
