@@ -42,12 +42,14 @@
 
   <section class="card">
     <h2>Mark Outcome</h2>
-    <div class="row">
-      <button id="win-btn" class="win" disabled>Mark Win</button>
-      <button id="loss-btn" class="loss" disabled>Mark Loss</button>
-    </div>
+    <div id="outcome-widget"><div class="muted small">Run an analysis to mark its outcome.</div></div>
     <div id="outcome" class="muted small"></div>
   </section>
+
+  <details class="card" id="pending-card">
+    <summary>Pending trades <span id="pending-count" class="muted small"></span></summary>
+    <div id="pending-list" class="pending-list"><div class="muted small">No pending trades.</div></div>
+  </details>
 
   <details class="card">
     <summary>Settings</summary>

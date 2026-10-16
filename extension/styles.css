@@ -24,3 +24,16 @@ summary{cursor:pointer;font-weight:600}
 .status.error { color: #ef5350; }
 .status[hidden] { display: none; }
 #backend-url { width: 100%; box-sizing: border-box; margin-top: 4px; }
+
+button.invalid{background:#5f6b7a}
+button.primary-sm{background:var(--accent)}
+button.secondary{background:var(--border)}
+.outcome-controls{margin-top:6px}
+.pm-form{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.pm-form[hidden]{display:none}
+select,textarea{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;font:inherit}
+textarea{resize:vertical}
+.pending-row{border-top:1px solid var(--border);padding:8px 0}
+.pending-head{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.badge-sm{padding:1px 8px;border-radius:4px;font-weight:700;font-size:12px;color:#000;background:var(--hold)}
+.badge-sm.buy{background:var(--buy)}.badge-sm.sell{background:var(--sell)}
