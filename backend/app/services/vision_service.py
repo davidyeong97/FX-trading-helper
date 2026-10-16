@@ -170,6 +170,34 @@ def _call_claude(api_key: str, images: list, prompt: str) -> str:
         raise VisionAPIError(f"Unexpected Claude response shape: {str(data)[:300]}") from exc
 
 
+def _call_openrouter(api_key: str, images: list, prompt: str) -> str:
+    url = f"{settings.OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if settings.OPENROUTER_SITE_URL:
+        headers["HTTP-Referer"] = settings.OPENROUTER_SITE_URL
+    if settings.OPENROUTER_APP_NAME:
+        headers["X-Title"] = settings.OPENROUTER_APP_NAME
+    content = [{"type": "text", "text": prompt}]
+    for _label, img in images:
+        content.append(
+            {"type": "image_url", "image_url": {"url": f"data:{_detect_mime(img)};base64,{img}"}}
+        )
+    payload = {
+        "model": settings.OPENROUTER_MODEL,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": content},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    data = _post(url, headers, payload)
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise VisionAPIError(f"Unexpected OpenRouter response shape: {str(data)[:300]}") from exc
+
+
 def parse_analysis(raw: str) -> VisionAnalysis:
     """Extract and validate JSON from raw model text."""
     text = raw.strip()
@@ -199,9 +227,11 @@ def analyze_chart(
 
     extra_context (e.g. memory-engine block) is prepended to the user prompt.
     """
-    provider = (settings.LLM_PROVIDER or "").strip().lower()
-    if provider not in ("gemini", "claude"):
-        raise VisionConfigError(f"Unsupported LLM_PROVIDER '{settings.LLM_PROVIDER}' (use gemini|claude)")
+    provider = (settings.LLM_PROVIDER or "openrouter").strip().lower()
+    if provider not in ("gemini", "claude", "openrouter"):
+        raise VisionConfigError(
+            f"Unsupported LLM_PROVIDER '{settings.LLM_PROVIDER}' (use openrouter|gemini|claude)"
+        )
     if not settings.LLM_API_KEY:
         raise VisionConfigError("LLM_API_KEY is not configured")
     if frames:
@@ -209,7 +239,7 @@ def analyze_chart(
     else:
         images = [(timeframe, _strip_b64(image_base64 or ""))]
     prompt = _build_prompt(symbol, timeframe, extra_context, [lbl for lbl, _ in images])
-    call = _call_gemini if provider == "gemini" else _call_claude
+    call = {"gemini": _call_gemini, "claude": _call_claude, "openrouter": _call_openrouter}[provider]
     raw = call(settings.LLM_API_KEY, images, prompt)
     result = parse_analysis(raw).model_dump(by_alias=True)
     result["provider"] = provider

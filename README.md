@@ -59,7 +59,7 @@ It features an integrated **Self-Learning Memory Log (SQLite)** that tracks pred
 │                                                                             │
 │  ┌────────────────────┐   ┌──────────────────────┐   ┌───────────────────┐  │
 │  │  Vision AI Engine  │   │  News & Search Engine│   │ Self-Learning DB  │  │
-│  │ (Gemini / Claude)  │   │   (Tavily / News)    │   │ (SQLite + Logs)   │  │
+│  │ (OpenRouter/Gemini/Claude)  │   │   (Tavily / News)    │   │ (SQLite + Logs)   │  │
 │  └────────────────────┘   └──────────────────────┘   └───────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -85,7 +85,7 @@ pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env with your LLM_API_KEY and SEARCH_API_KEY (see Configuration)
+# Edit .env with your LLM_API_KEY (OpenRouter API key) and SEARCH_API_KEY (Tavily API key) (see Configuration)
 
 # Start FastAPI local server
 uvicorn app.main:app --reload --port 8000
@@ -106,9 +106,13 @@ Backend settings are read from environment variables or `backend/.env` (see `bac
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_API_KEY` | _(empty)_ | API key for the vision LLM. `/api/v1/analyze` returns 503 until set. |
-| `LLM_PROVIDER` | `gemini` | Vision provider: `gemini` or `claude`. |
-| `SEARCH_API_KEY` | _(empty)_ | Tavily API key for news/sentiment. If empty, analysis runs without live news. |
+| `LLM_API_KEY` | _(empty)_ | API key for the vision LLM. With the default provider this is your OpenRouter API key. `/api/v1/analyze` returns 503 until set. |
+| `LLM_PROVIDER` | `openrouter` | Vision provider: `openrouter`, `gemini` or `claude`. |
+| `OPENROUTER_MODEL` | `google/gemini-2.0-flash-001` | Model used when `LLM_PROVIDER=openrouter`. |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter API base URL. |
+| `OPENROUTER_SITE_URL` | _(empty)_ | Optional; sent as the `HTTP-Referer` header. |
+| `OPENROUTER_APP_NAME` | `FX Trading Helper` | Optional; sent as the `X-Title` header. |
+| `SEARCH_API_KEY` | _(empty)_ | Tavily API key; news/sentiment runs through Tavily. If empty, analysis runs without live news. |
 | `SEARCH_TIMEOUT_SECONDS` | `2.0` | Timeout for the news search call. |
 | `SEARCH_MAX_RESULTS` | `6` | Maximum search results fed into the prompt. |
 | `SEARCH_CACHE_TTL_SECONDS` | `120` | How long search results per symbol are cached. |
@@ -149,7 +153,7 @@ Vision and search calls are mocked and the database is in-memory SQLite, so no A
 - **Symbol not detected (shows `— / —`):** reload the chart page so the content script is injected, then retry. Binance/Webull selectors are best-effort and may break when those sites change.
 - **CORS errors:** set `CORS_ALLOW_ORIGINS` in `backend/.env` to `*` or your `chrome-extension://<id>` origin and restart the backend.
 - **Changing the backend URL:** edit the backend URL in the side panel **Settings** section (default `http://localhost:8000`); it is saved in extension storage.
-- **503 on analyze:** `LLM_API_KEY` is not set (or `LLM_PROVIDER` is not `gemini`/`claude`).
+- **503 on analyze:** `LLM_API_KEY` is not set, or `LLM_PROVIDER` is not `gemini`/`claude`/`openrouter`.
 
 ---
 
@@ -189,7 +193,7 @@ FX-trading-helper/
 │   │   │   ├── trades.py        # Endpoint: GET/POST /api/v1/trades (Log trade & update outcome)
 │   │   │   └── memory.py        # Endpoint: GET /api/v1/memory/stats (Win rate & past lessons)
 │   │   ├── services/
-│   │   │   ├── vision_service.py # Gemini/Claude Vision API integration
+│   │   │   ├── vision_service.py # OpenRouter/Gemini/Claude Vision API integration
 │   │   │   ├── search_service.py # News & X/Twitter real-time web search integration
 │   │   │   └── memory_engine.py  # Prompt enrichment logic using past post-mortems
 │   │   └── db/

@@ -5,8 +5,6 @@ pydantic-settings
 python-dotenv
 sqlalchemy
 httpx
-google-generativeai
-anthropic
 tavily-python
 pytest
 pillow

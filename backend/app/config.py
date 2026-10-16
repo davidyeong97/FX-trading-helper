@@ -5,7 +5,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     LLM_API_KEY: str = ""
-    LLM_PROVIDER: str = "gemini"
+    LLM_PROVIDER: str = "openrouter"
+    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-001"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_SITE_URL: str = ""
+    OPENROUTER_APP_NAME: str = "FX Trading Helper"
     SEARCH_API_KEY: str = ""
     SEARCH_TIMEOUT_SECONDS: float = 2.0
     SEARCH_MAX_RESULTS: int = 6
