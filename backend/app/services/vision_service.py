@@ -70,11 +70,12 @@ class VisionAnalysis(BaseModel):
 
 
 SYSTEM_PROMPT = """You are an expert FX/price-action analyst. Analyze the provided chart screenshot.
+If several labelled chart images are provided, one per timeframe, assess the higher-timeframe bias first, then refine with the lower timeframes; the "Active timeframe" is the execution timeframe.
 Assess candlestick patterns, support/resistance, liquidity sweeps and order blocks across the 5M, 15M and 1H timeframes (infer what is visible; say "not visible" otherwise).
 Be conservative: prefer HOLD when structure is unclear or a breakout looks unconfirmed.
 Breakout discipline: only call a breakout BUY/SELL when a candle has CLOSED beyond the level with a solid body (not just a wick) and the move is retested or follows through; a wick beyond a level is a liquidity sweep/fakeout, which favours the opposite direction or HOLD.
 High-volatility news: if the chart shows abnormally large candles, wide spreads/gaps, or the context mentions a high-impact event (FOMC, NFP, CPI, central bank, etc.), treat breakouts as likely false; return HOLD unless price has closed beyond the level on at least two consecutive candles and the stop sits beyond the news spike extreme. Cap confidence at 60 in these conditions.
-Never let confidence exceed 75 unless 5M, 15M and 1H structure agree.
+Never let confidence exceed 75 unless 5M, 15M and 1H structure agree; with only one image provided, never exceed 75.
 Respond with ONLY a JSON object, no markdown, in this exact shape:
 {"signal":"BUY|SELL|HOLD","confidence":0-100,"entry":number|null,"stop_loss":number|null,"take_profit":number|null,"rr":number|null,
 "rationale":"string",
@@ -82,9 +83,16 @@ Respond with ONLY a JSON object, no markdown, in this exact shape:
 For BUY: stop_loss < entry < take_profit. For SELL: take_profit < entry < stop_loss."""
 
 
-def _build_prompt(symbol: str, timeframe: str, extra_context: str = "") -> str:
+def _build_prompt(symbol: str, timeframe: str, extra_context: str = "", frame_labels: Optional[list] = None) -> str:
     parts = [extra_context.strip()] if extra_context.strip() else []
-    parts.append(f"Symbol: {symbol}\nActive timeframe: {timeframe}\nAnalyze this chart.")
+    if frame_labels and len(frame_labels) > 1:
+        parts.append(
+            f"Symbol: {symbol}\nExecution timeframe: {timeframe}\n"
+            f"{len(frame_labels)} chart images follow, in order: {', '.join(frame_labels)}. "
+            "Assess the higher-timeframe bias first. Analyze these charts together."
+        )
+    else:
+        parts.append(f"Symbol: {symbol}\nActive timeframe: {timeframe}\nAnalyze this chart.")
     return "\n\n".join(parts)
 
 
@@ -121,14 +129,16 @@ def _post(url: str, headers: dict, payload: dict) -> dict:
         raise VisionAPIError("LLM provider returned non-JSON response") from exc
 
 
-def _call_gemini(api_key: str, image_b64: str, prompt: str) -> str:
+def _call_gemini(api_key: str, images: list, prompt: str) -> str:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+    parts = [{"text": prompt}]
+    for label, img in images:
+        if len(images) > 1:
+            parts.append({"text": f"Chart image: {label}"})
+        parts.append({"inline_data": {"mime_type": _detect_mime(img), "data": img}})
     payload = {
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [
-            {"text": prompt},
-            {"inline_data": {"mime_type": _detect_mime(image_b64), "data": image_b64}},
-        ]}],
+        "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
     }
     data = _post(url, {"x-goog-api-key": api_key}, payload)
@@ -138,16 +148,19 @@ def _call_gemini(api_key: str, image_b64: str, prompt: str) -> str:
         raise VisionAPIError(f"Unexpected Gemini response shape: {str(data)[:300]}") from exc
 
 
-def _call_claude(api_key: str, image_b64: str, prompt: str) -> str:
+def _call_claude(api_key: str, images: list, prompt: str) -> str:
+    content = []
+    for label, img in images:
+        if len(images) > 1:
+            content.append({"type": "text", "text": f"Chart image: {label}"})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": _detect_mime(img), "data": img}})
+    content.append({"type": "text", "text": prompt})
     payload = {
         "model": CLAUDE_MODEL,
         "max_tokens": 2000,
         "temperature": 0.2,
         "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": _detect_mime(image_b64), "data": image_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
+        "messages": [{"role": "user", "content": content}],
     }
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     data = _post("https://api.anthropic.com/v1/messages", headers, payload)
@@ -179,7 +192,9 @@ def parse_analysis(raw: str) -> VisionAnalysis:
         raise VisionValidationError(f"Model output failed schema validation: {exc}") from exc
 
 
-def analyze_chart(image_base64: str, symbol: str, timeframe: str, extra_context: str = "") -> dict:
+def analyze_chart(
+    image_base64: Optional[str], symbol: str, timeframe: str, extra_context: str = "", frames: Optional[list] = None
+) -> dict:
     """Analyze a base64 PNG chart; returns a validated dict.
 
     extra_context (e.g. memory-engine block) is prepended to the user prompt.
@@ -189,10 +204,13 @@ def analyze_chart(image_base64: str, symbol: str, timeframe: str, extra_context:
         raise VisionConfigError(f"Unsupported LLM_PROVIDER '{settings.LLM_PROVIDER}' (use gemini|claude)")
     if not settings.LLM_API_KEY:
         raise VisionConfigError("LLM_API_KEY is not configured")
-    img = _strip_b64(image_base64)
-    prompt = _build_prompt(symbol, timeframe, extra_context)
+    if frames:
+        images = [(str(f["timeframe"]), _strip_b64(f["image_base64"])) for f in frames]
+    else:
+        images = [(timeframe, _strip_b64(image_base64 or ""))]
+    prompt = _build_prompt(symbol, timeframe, extra_context, [lbl for lbl, _ in images])
     call = _call_gemini if provider == "gemini" else _call_claude
-    raw = call(settings.LLM_API_KEY, img, prompt)
+    raw = call(settings.LLM_API_KEY, images, prompt)
     result = parse_analysis(raw).model_dump(by_alias=True)
     result["provider"] = provider
     return result

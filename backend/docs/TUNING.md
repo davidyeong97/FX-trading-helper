@@ -14,7 +14,8 @@ Round trip = capture -> compress -> upload -> LLM vision call -> Tavily search -
 | Image payload | Extension (`sidepanel.js: compressImage`) downscales to max 1280 px wide and re-encodes as JPEG q=0.72 before upload. `python tests/bench_compression.py` (synthetic 1920x1080 chart): flat chart 12 KiB PNG vs 42 KiB JPEG (flat synthetic charts compress well as PNG); noisy/antialiased chart 3.0 MiB PNG -> 68 KiB JPEG. Real TradingView captures sit between, typically a 5-20x reduction. |
 | Backend overhead (mocked LLM/search) | < 250 ms/request asserted in `test_backend_overhead_is_small`; measured ~10 ms locally. |
 | LLM call | Dominant cost. Smaller image means fewer input tokens and faster upload; Gemini 1.5 Flash is typically ~1-2 s. NOT measured here: no API key in the build environment, so end-to-end time must be confirmed on a live key. |
-| Search | Tavily has a 5 s timeout (`SEARCH_TIMEOUT_SECONDS`) and 120 s cache; cached/degraded path adds ~0 ms. Lower the timeout to ~1.5 s if the 3 s budget is tight. |
+| Multi-timeframe | Each extra frame (max 3 via `frames[]`) adds one more image to the LLM request: input tokens, upload size and LLM latency grow roughly linearly per image (expect ~+0.5-1 s per extra frame on Gemini Flash; unmeasured, confirm on a live key). The 3 s target is for single-frame analysis; use 2-3 frames when accuracy matters more than speed. A single frame caps BUY/SELL confidence at 75 (`frame_guard` in response). |
+| Search | Sentiment is fetched before the vision call, concurrently with the memory lookup, and fed into the prompt. Tavily has a 2 s timeout (`SEARCH_TIMEOUT_SECONDS`, default 2.0) and 120 s cache; cached/degraded path adds ~0 ms. High-impact news caps BUY/SELL confidence at 60 (`news_guard` in response). |
 
 The backend sniffs JPEG/PNG/WebP magic bytes and sends the correct MIME type to Gemini/Claude.
 

@@ -73,35 +73,83 @@ It features an integrated **Self-Learning Memory Log (SQLite)** that tracks pred
 
 ```bash
 # Clone repository
-git clone [https://github.com/your-username/FX-trading-helper.git](https://github.com/your-username/FX-trading-helper.git)
+git clone https://github.com/davidyeong97/FX-trading-helper.git
 cd FX-trading-helper/backend
 
 # Virtual environment setup
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env with your LLM_API_KEY and SEARCH_API_KEY
+# Edit .env with your LLM_API_KEY and SEARCH_API_KEY (see Configuration)
 
 # Start FastAPI local server
 uvicorn app.main:app --reload --port 8000
-
 ```
 
 ### 2. Load Chrome Extension
-
-```
 
 1. Open Chrome and navigate to `chrome://extensions/`.
 2. Enable **Developer mode** (toggle in top right).
 3. Click **Load unpacked** and select the `FX-trading-helper/extension` directory.
 4. Pin the **FX Trading Helper** extension and open the Side Panel on any chart page.
 
+---
+
+## ⚙️ Configuration
+
+Backend settings are read from environment variables or `backend/.env` (see `backend/.env.example` and `backend/app/config.py`).
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_API_KEY` | _(empty)_ | API key for the vision LLM. `/api/v1/analyze` returns 503 until set. |
+| `LLM_PROVIDER` | `gemini` | Vision provider: `gemini` or `claude`. |
+| `SEARCH_API_KEY` | _(empty)_ | Tavily API key for news/sentiment. If empty, analysis runs without live news. |
+| `SEARCH_TIMEOUT_SECONDS` | `2.0` | Timeout for the news search call. |
+| `SEARCH_MAX_RESULTS` | `6` | Maximum search results fed into the prompt. |
+| `SEARCH_CACHE_TTL_SECONDS` | `120` | How long search results per symbol are cached. |
+| `DB_URL` | `sqlite:///./fx_helper.db` | SQLAlchemy database URL. |
+| `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins (e.g. `chrome-extension://<your-extension-id>`). |
+
+See [backend/docs/TUNING.md](backend/docs/TUNING.md) for latency, prompt and confidence-feedback tuning.
+
+---
+
+## 🧭 Usage
+
+**Single chart:** open a chart on TradingView (Binance/Webull are best-effort), open the side panel and click **Analyze Active Chart**. The panel shows the signal (BUY/SELL/HOLD), confidence, entry/SL/TP, R:R and memory insights. A single frame caps BUY/SELL confidence at 75.
+
+**Multi-timeframe:** expand **Multi-timeframe**, switch the chart to a timeframe (e.g. 1H) and click **Capture this timeframe**; repeat for up to 3 frames (e.g. 1H, 15M, 5M), then click **Analyze N frames**.
+
+**Marking outcomes:** after a trade plays out, use the outcome widget to mark it **WIN**, **LOSS** or **INVALID**. For a loss, add a post-mortem reason; it is stored as a lesson and fed into future prompts, and lowers confidence on similar setups (same symbol, timeframe and signal).
+
+**Pending trades:** the **Pending trades** card lists analyses whose outcome is still `PENDING` so you can resolve them later.
+
+---
+
+## 🧪 Running tests
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest
 ```
+
+Vision and search calls are mocked and the database is in-memory SQLite, so no API keys are needed.
+
+---
+
+## 🛠️ Troubleshooting
+
+- **Backend offline / "Cannot reach backend":** make sure `uvicorn app.main:app --port 8000` is running and check `http://localhost:8000/health` returns `{"status":"ok"}`.
+- **Symbol not detected (shows `— / —`):** reload the chart page so the content script is injected, then retry. Binance/Webull selectors are best-effort and may break when those sites change.
+- **CORS errors:** set `CORS_ALLOW_ORIGINS` in `backend/.env` to `*` or your `chrome-extension://<id>` origin and restart the backend.
+- **Changing the backend URL:** edit the backend URL in the side panel **Settings** section (default `http://localhost:8000`); it is saved in extension storage.
+- **503 on analyze:** `LLM_API_KEY` is not set (or `LLM_PROVIDER` is not `gemini`/`claude`).
 
 ---
 
@@ -147,10 +195,15 @@ FX-trading-helper/
 │   │   └── db/
 │   │       ├── database.py      # SQLite connection & session management
 │   │       └── models.py        # SQLAlchemy models (TradeLog, LessonLog)
+│   ├── tests/                   # pytest suite (vision + search mocked in conftest.py)
+│   ├── docs/
+│   │   └── TUNING.md            # Latency, prompt & confidence-feedback tuning notes
+│   ├── pytest.ini
 │   ├── requirements.txt
 │   └── .env.example
 │
 ├── README.md
+├── LICENSE
 └── .gitignore
 
 ```
@@ -160,38 +213,29 @@ FX-trading-helper/
 ### 📋 Phase-by-Phase Implementation Plan
 
 #### Phase 1: Chrome Extension UI & Canvas Capture (Week 1)
-- [ ] **Manifest V3 Setup:** Configure `manifest.json` with permissions (`sidePanel`, `activeTab`, `scripting`, `tabs`).
-- [ ] **Side Panel UI:** Build `sidepanel.html` featuring:
+- [x] **Manifest V3 Setup:** Configure `manifest.json` with permissions (`sidePanel`, `activeTab`, `scripting`, `tabs`).
+- [x] **Side Panel UI:** Build `sidepanel.html` featuring:
   - "Analyze Active Chart" primary trigger button.
   - Signal Display Header (BUY / SELL / HOLD + Confidence Bar).
   - Collapsible Trade Details (Entry, Stop Loss, Take Profit, R:R).
   - Recent AI Lessons & Memory Log Widget.
-- [ ] **Tab Capture Scripting:** Implement `chrome.tabs.captureVisibleTab` in `sidepanel.js` to grab high-resolution PNG chart captures.
-- [ ] **DOM Metadata Scraper:** Write `content.js` to automatically extract ticker symbols and active interval parameters from TradingView DOM (`.single-symbol`, `.interval`).
+- [x] **Tab Capture Scripting:** Implement `chrome.tabs.captureVisibleTab` in `sidepanel.js` to grab high-resolution PNG chart captures.
+- [x] **DOM Metadata Scraper:** Write `content.js` to automatically extract ticker symbols and active interval parameters from TradingView DOM (`.single-symbol`, `.interval`). _TradingView is primary; Binance and Webull selectors are best-effort._
 
 #### Phase 2: FastAPI Backend & AI Pipeline (Week 2)
-- [ ] **Core Server Setup:** Initialize FastAPI server with CORS middleware allowing local extension requests.
-- [ ] **Vision Processing Module:** Implement `vision_service.py` using multimodal APIs (Gemini Vision) to evaluate candlestick patterns, market structure, and key price levels from base64 image strings.
-- [ ] **Real-Time News Engine:** Implement `search_service.py` to fetch breaking sentiment and key macro events for extracted trading pairs.
-- [ ] **Unified Analysis Route (`POST /api/v1/analyze`):** Orchestrate multi-modal inputs into a single structured response JSON.
+- [x] **Core Server Setup:** Initialize FastAPI server with CORS middleware allowing local extension requests.
+- [x] **Vision Processing Module:** Implement `vision_service.py` using multimodal APIs (Gemini Vision) to evaluate candlestick patterns, market structure, and key price levels from base64 image strings.
+- [x] **Real-Time News Engine:** Implement `search_service.py` to fetch breaking sentiment and key macro events for extracted trading pairs.
+- [x] **Unified Analysis Route (`POST /api/v1/analyze`):** Orchestrate multi-modal inputs into a single structured response JSON.
 
 #### Phase 3: SQLite Database & Self-Learning Loop (Week 3)
-- [ ] **Database Schema:** Create `trades` and `lessons` tables in SQLite using SQLAlchemy:
+- [x] **Database Schema:** Create `trades` and `lessons` tables in SQLite using SQLAlchemy:
   - `trades`: `id`, `symbol`, `timeframe`, `signal`, `confidence`, `entry`, `sl`, `tp`, `outcome_status` (PENDING/WIN/LOSS/INVALID), `created_at`.
   - `lessons`: `id`, `trade_id`, `post_mortem_reason`, `mistake_category`.
-- [ ] **Context Injection Engine:** Build `memory_engine.py` to retrieve relevant past trade post-mortems based on symbol/timeframe and inject them into the system prompt prior to vision inference.
-- [ ] **Outcome Feedback Interface:** Add a quick "Mark Win/Loss" feedback widget in the Chrome Side Panel so users can audit trade outcomes with 1-click.
+- [x] **Context Injection Engine:** Build `memory_engine.py` to retrieve relevant past trade post-mortems based on symbol/timeframe and inject them into the system prompt prior to vision inference.
+- [x] **Outcome Feedback Interface:** Add a quick "Mark Win/Loss" feedback widget in the Chrome Side Panel so users can audit trade outcomes with 1-click.
 
 #### Phase 4: Testing & Optimization (Week 4)
-- [ ] **Latency Tuning:** Optimize image compression before API transmission to keep analysis round-trip under 3 seconds.
-- [ ] **Prompt Fine-Tuning:** Refine system prompts to eliminate false breakout signals during high-volatility news events.
-- [ ] **User Feedback Audit:** Verify that logged trade losses accurately modify subsequent prediction confidence in similar technical setups.
-
----
-
-<ElicitationsGroup message="How would you like to proceed with development?">
-  <Elicitation label="Generate Chrome Extension boilerplate" query="Provide the full code for manifest.json, sidepanel.html, and sidepanel.js to start building the extension."/>
-  <Elicitation label="Generate FastAPI backend code" query="Provide the FastAPI backend code structure with database models and the Gemini Vision integration endpoint."/>
-</ElicitationsGroup>
-
-```
+- [x] **Latency Tuning:** Optimize image compression before API transmission to keep analysis round-trip under 3 seconds. _Images are downscaled/JPEG-encoded; the live LLM round-trip is unmeasured without an API key (see TUNING.md)._
+- [x] **Prompt Fine-Tuning:** Refine system prompts to eliminate false breakout signals during high-volatility news events.
+- [x] **User Feedback Audit:** Verify that logged trade losses accurately modify subsequent prediction confidence in similar technical setups.

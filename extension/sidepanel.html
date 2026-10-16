@@ -12,6 +12,16 @@
   </header>
 
   <button id="analyze-btn" class="primary">Analyze Active Chart</button>
+  <details class="card" id="mtf-card">
+    <summary>Multi-timeframe <span id="mtf-count" class="muted small"></span></summary>
+    <div class="muted small">Capture up to 3 timeframes (switch the chart timeframe between captures), then analyze them together. Click a chip to make it the primary (execution) timeframe.</div>
+    <div id="mtf-chips" class="chips"></div>
+    <div class="row">
+      <button id="mtf-capture-btn" class="secondary" type="button">Capture this timeframe</button>
+      <button id="mtf-analyze-btn" class="primary-sm" type="button" disabled>Analyze 0 frames</button>
+    </div>
+  </details>
+
   <div id="status" class="status muted" role="status"></div>
   <div id="error" class="status error" role="alert" hidden></div>
 
@@ -42,12 +52,14 @@
 
   <section class="card">
     <h2>Mark Outcome</h2>
-    <div class="row">
-      <button id="win-btn" class="win" disabled>Mark Win</button>
-      <button id="loss-btn" class="loss" disabled>Mark Loss</button>
-    </div>
+    <div id="outcome-widget"><div class="muted small">Run an analysis to mark its outcome.</div></div>
     <div id="outcome" class="muted small"></div>
   </section>
+
+  <details class="card" id="pending-card">
+    <summary>Pending trades <span id="pending-count" class="muted small"></span></summary>
+    <div id="pending-list" class="pending-list"><div class="muted small">No pending trades.</div></div>
+  </details>
 
   <details class="card">
     <summary>Settings</summary>
