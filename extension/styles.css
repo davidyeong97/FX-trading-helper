@@ -37,3 +37,7 @@ textarea{resize:vertical}
 .pending-head{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
 .badge-sm{padding:1px 8px;border-radius:4px;font-weight:700;font-size:12px;color:#000;background:var(--hold)}
 .badge-sm.buy{background:var(--buy)}.badge-sm.sell{background:var(--sell)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;min-height:4px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;border:1px solid var(--border);border-radius:12px;font-size:12px;cursor:pointer}
+.chip.primary{border-color:var(--accent);font-weight:700}
+.chip button{background:none;padding:0 6px;font-size:14px;line-height:1;color:var(--muted)}

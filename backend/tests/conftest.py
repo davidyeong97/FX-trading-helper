@@ -43,8 +43,11 @@ class VisionStub:
             "take_profit": 1.1100, "rr": 2.0, "rationale": "stub", "structure": {}, "provider": "gemini",
         }
 
-    def __call__(self, image_base64, symbol, timeframe, extra_context=""):
-        self.calls.append({"symbol": symbol, "timeframe": timeframe, "extra_context": extra_context})
+    def __call__(self, image_base64, symbol, timeframe, extra_context="", frames=None):
+        self.calls.append({
+            "symbol": symbol, "timeframe": timeframe, "extra_context": extra_context,
+            "image_base64": image_base64, "frames": frames,
+        })
         return dict(self.result)
 
 

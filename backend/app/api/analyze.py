@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["analyze"])
 
 NEWS_CONFIDENCE_CAP = 60.0
+SINGLE_FRAME_CONFIDENCE_CAP = 75.0
+MAX_FRAMES = 3
+MAX_IMAGE_B64_CHARS = 8_000_000
 MAX_HEADLINES = 3
 MAX_HEADLINE_CHARS = 200
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
@@ -56,10 +59,50 @@ def apply_news_guard(sentiment: dict, signal: str, confidence: float) -> tuple[f
     return confidence, guard
 
 
+def apply_frame_guard(frame_count: int, signal: str, confidence: float) -> tuple[float, dict]:
+    guard = {
+        "applied": False, "reason": "", "frames": frame_count,
+        "raw_confidence": confidence, "capped_confidence": confidence,
+    }
+    if frame_count < 2 and signal in ("BUY", "SELL") and confidence > SINGLE_FRAME_CONFIDENCE_CAP:
+        guard.update(
+            applied=True,
+            reason=f"single timeframe provided; confidence capped at {SINGLE_FRAME_CONFIDENCE_CAP:.0f}",
+            capped_confidence=SINGLE_FRAME_CONFIDENCE_CAP,
+        )
+        return SINGLE_FRAME_CONFIDENCE_CAP, guard
+    if frame_count < 2:
+        guard["reason"] = "single timeframe provided; cap not exceeded"
+    return confidence, guard
+
+
+class Frame(BaseModel):
+    timeframe: str = Field(min_length=1, max_length=16)
+    image_base64: str = Field(min_length=1, max_length=MAX_IMAGE_B64_CHARS)
+
+
 class AnalyzeRequest(BaseModel):
-    image_base64: str = Field(min_length=1)
+    image_base64: Optional[str] = Field(default=None, min_length=1)
     symbol: str = Field(min_length=1, max_length=32)
     timeframe: str = Field(min_length=1, max_length=16)
+    frames: Optional[list[Frame]] = Field(default=None, max_length=MAX_FRAMES)
+
+    @model_validator(mode="after")
+    def _check_images(self):
+        if self.frames:
+            tfs = [f.timeframe.strip().lower() for f in self.frames]
+            if len(set(tfs)) != len(tfs):
+                raise ValueError("frames must have unique timeframes")
+            if self.timeframe.strip().lower() not in tfs:
+                raise ValueError("timeframe must match one of the frames")
+        elif not self.image_base64:
+            raise ValueError("image_base64 or frames is required")
+        return self
+
+    def all_frames(self) -> list[dict]:
+        if self.frames:
+            return [{"timeframe": f.timeframe, "image_base64": f.image_base64} for f in self.frames]
+        return [{"timeframe": self.timeframe, "image_base64": self.image_base64}]
 
 
 class TradeDetails(BaseModel):
@@ -85,6 +128,7 @@ class AnalyzeResponse(BaseModel):
     sentiment: dict
     memory_insights: dict
     news_guard: dict = Field(default_factory=dict)
+    frame_guard: dict = Field(default_factory=dict)
     status: str = OutcomeStatus.PENDING.value
 
 
@@ -97,9 +141,11 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
     sentiment_dict = sentiment.model_dump() if hasattr(sentiment, "model_dump") else dict(sentiment)
     extra_context = f"{memory.text}\n\n{build_news_context(sentiment_dict)}".strip()
 
+    frames = req.all_frames()
     try:
         vision = vision_service.analyze_chart(
-            req.image_base64, req.symbol, req.timeframe, extra_context=extra_context
+            frames[0]["image_base64"], req.symbol, req.timeframe,
+            extra_context=extra_context, frames=frames,
         )
     except vision_service.VisionConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
@@ -115,6 +161,8 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
     )
 
     confidence, news_guard = apply_news_guard(sentiment_dict, vision["signal"], confidence)
+
+    confidence, frame_guard = apply_frame_guard(len(frames), vision["signal"], confidence)
 
     trade = TradeLog(
         symbol=req.symbol,
@@ -147,4 +195,5 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRespon
         sentiment=sentiment_dict,
         memory_insights={**memory.to_dict(), "confidence_adjustment": adjustment},
         news_guard=news_guard,
+        frame_guard=frame_guard,
     )
