@@ -264,3 +264,20 @@ def test_vision_service_sends_all_images(monkeypatch):
     assert "1H" in str(g["contents"][0]["parts"])
     assert sum(b["type"] == "image" for b in c["messages"][0]["content"]) == 2
     assert "1H, 15M" in str(c["messages"][0]["content"])
+
+
+def test_full_loop_multi_frame_news_guard_loss_then_lesson(client, vision, search):
+    vision.result.update(signal="BUY", confidence=85.0)
+    _set_sentiment(search, high_impact=True, high_impact_flags={"central_bank": True})
+    first = _analyze(client, frames=_frames("1H", "15M", "5M")).json()
+    assert [f["timeframe"] for f in vision.calls[-1]["frames"]] == ["1H", "15M", "5M"]
+    assert first["news_guard"]["applied"] and first["confidence"] == 60.0
+    assert first["frame_guard"]["applied"] is False
+
+    _log_outcome(client, first["trade_id"], "LOSS", reason="bought into central bank spike")
+
+    second = _analyze(client, frames=_frames("1H", "15M", "5M")).json()
+    adj = second["memory_insights"]["confidence_adjustment"]
+    assert adj["raw_confidence"] == 85.0 and adj["adjusted_confidence"] < 85.0
+    assert second["news_guard"]["applied"]
+    assert "bought into central bank spike" in vision.calls[-1]["extra_context"]
