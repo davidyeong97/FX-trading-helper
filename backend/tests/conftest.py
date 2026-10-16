@@ -40,7 +40,7 @@ class VisionStub:
         self.calls = []
         self.result = {
             "signal": "BUY", "confidence": 80.0, "entry": 1.1000, "stop_loss": 1.0950,
-            "take_profit": 1.1100, "rr": 2.0, "rationale": "stub", "structure": {}, "provider": "gemini",
+            "take_profit": 1.1100, "rr": 2.0, "rationale": "stub", "structure": {}, "provider": "openrouter",
         }
 
     def __call__(self, image_base64, symbol, timeframe, extra_context="", frames=None):

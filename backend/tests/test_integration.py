@@ -281,3 +281,40 @@ def test_full_loop_multi_frame_news_guard_loss_then_lesson(client, vision, searc
     assert adj["raw_confidence"] == 85.0 and adj["adjusted_confidence"] < 85.0
     assert second["news_guard"]["applied"]
     assert "bought into central bank spike" in vision.calls[-1]["extra_context"]
+
+
+def test_vision_service_openrouter_dispatch(monkeypatch):
+    import json
+
+    from app.config import settings
+
+    body = {"signal": "BUY", "confidence": 70, "entry": 1.1, "stop_loss": 1.095,
+            "take_profit": 1.11, "rationale": "ok"}
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"choices": [{"message": {"content": json.dumps(body)}}]}
+
+    sent = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.update(url=url, headers=headers, payload=json)
+        return Resp()
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "k")
+    monkeypatch.setattr(vision_service.httpx, "post", fake_post)
+    result = vision_service.analyze_chart(
+        None, "EURUSD", "15M",
+        frames=[{"timeframe": "1H", "image_base64": "aGVsbG8="},
+                {"timeframe": "15M", "image_base64": "aGVsbG8="}],
+    )
+    assert result["provider"] == "openrouter"
+    assert result["signal"] == "BUY"
+    assert (result["entry"], result["stop_loss"], result["take_profit"]) == (1.1, 1.095, 1.11)
+    assert sent["url"].endswith("/chat/completions")
+    assert sent["headers"]["Authorization"] == "Bearer k"
+    assert sum(p["type"] == "image_url" for p in sent["payload"]["messages"][1]["content"]) == 2
