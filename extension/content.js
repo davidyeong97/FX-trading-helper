@@ -53,14 +53,10 @@
   }
 
   const TV_SYMBOL_SELECTORS = [
+    "#header-toolbar-symbol-search",
     '[data-name="legend-source-title"] .title-l31H9iuA',
     '[data-name="legend-source-title"]',
-    "#header-toolbar-symbol-search .js-button-text",
-    '#header-toolbar-symbol-search [class*="text"]',
     ".chart-markup-table .pane-legend-title__description",
-    ".single-symbol",
-    '[class*="symbolTitle"]',
-    '[data-symbol-short]',
   ];
   const TV_INTERVAL_SELECTORS = [
     '#header-toolbar-intervals button[aria-checked="true"]',

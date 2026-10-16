@@ -18,6 +18,7 @@
   let frames = [];
   let primaryTf = null;
   let busy = false;
+  let lastInsights = { sentiment: null, rationale: "" };
 
   function setLoading(on, msg) {
     busy = on;
@@ -171,7 +172,8 @@
       rr = Math.abs(t.tp - t.entry) / Math.abs(t.entry - t.sl);
     }
     $("d-rr").textContent = rr == null ? "—" : "1:" + Number(rr).toFixed(2);
-    renderMemory(r.memory_insights, r.sentiment, r.rationale);
+    lastInsights = { sentiment: r.sentiment || null, rationale: r.rationale || "" };
+    renderMemory(r.memory_insights, lastInsights.sentiment, lastInsights.rationale);
     $("pair-meta").textContent = `${r.symbol} · ${r.timeframe}`;
     memSymbol = r.symbol;
     memTimeframe = r.timeframe;
@@ -478,7 +480,7 @@
         losses: g ? g.losses : 0,
         win_rate: g ? g.win_rate : null,
         lessons,
-      });
+      }, lastInsights.sentiment, lastInsights.rationale);
     } catch (_) {
       const li = el("li", "muted", "Memory unavailable (backend offline).");
       $("memory-log").replaceChildren(li);
@@ -494,7 +496,10 @@
         memSymbol = ctx.symbol;
         memTimeframe = ctx.timeframe;
         $("pair-meta").textContent = `${memSymbol} · ${memTimeframe}`;
-        if (changed) refreshMemory();
+        if (changed) {
+          lastInsights = { sentiment: null, rationale: "" };
+          refreshMemory();
+        }
       }
     } catch (_) {}
   }
