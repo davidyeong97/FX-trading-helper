@@ -128,7 +128,7 @@
       }
       for (const l of mem.lessons || []) {
         const reason = (l.reason || "").trim();
-        items.push(`Past mistake [${l.mistake_category}] (${l.signal}, ${l.outcome})` + (reason ? `: ${reason}` : ""));
+        items.push(`Past mistake [${l.mistake_category}] (${l.signal || l.outcome})` + (reason ? `: ${reason}` : ""));
       }
     }
     if (sentiment && sentiment.available && sentiment.summary) {
@@ -165,9 +165,12 @@
     $("d-rr").textContent = rr == null ? "—" : "1:" + Number(rr).toFixed(2);
     renderMemory(r.memory_insights, r.sentiment, r.rationale);
     $("pair-meta").textContent = `${r.symbol} · ${r.timeframe}`;
-    currentTradeId = r.trade_id;
-    $("win-btn").disabled = $("loss-btn").disabled = currentTradeId == null;
+    memSymbol = r.symbol;
+    memTimeframe = r.timeframe;
+    setLastTrade(r.trade_id == null ? null : r.trade_id);
+    renderOutcomeWidget();
     $("outcome").textContent = "";
+    loadPending();
   }
 
   async function analyze() {
@@ -201,27 +204,226 @@
     }
   }
 
-  async function mark(outcome) {
-    if (currentTradeId == null) return;
-    setError("");
-    $("win-btn").disabled = $("loss-btn").disabled = true;
-    $("outcome").textContent = "Saving…";
+  const CATEGORIES = [
+    ["", "Mistake category (optional)"],
+    ["false_breakout", "False breakout"],
+    ["news_spike", "News spike"],
+    ["against_trend", "Against trend"],
+    ["early_entry", "Early entry"],
+    ["stop_too_tight", "Stop too tight"],
+    ["other", "Other"],
+  ];
+  const MAX_REASON = 500;
+  const LAST_TRADE_KEY = "lastTradeId";
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  async function submitOutcome(tradeId, outcome, category, reason) {
+    const body = { outcome_status: outcome };
+    if (reason) body.post_mortem_reason = reason.slice(0, MAX_REASON);
+    if (category) body.mistake_category = category;
+    await api(`/api/v1/trades/${tradeId}/outcome`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  function buildOutcomeControls(tradeId, onDone) {
+    const wrap = el("div", "outcome-controls");
+    const btns = el("div", "row");
+    const msg = el("div", "muted small");
+    const form = el("div", "pm-form");
+    form.hidden = true;
+    const all = [];
+    for (const [label, cls, outcome] of [["Win", "win", "WIN"], ["Loss", "loss", "LOSS"], ["Invalid", "invalid", "INVALID"]]) {
+      const b = el("button", cls, label);
+      b.type = "button";
+      b.addEventListener("click", () => choose(outcome));
+      all.push(b);
+      btns.append(b);
+    }
+    const setBusy = (on) => all.forEach((b) => (b.disabled = on));
+
+    async function finish(outcome, category, reason) {
+      setError("");
+      setBusy(true);
+      form.hidden = true;
+      msg.textContent = "Saving…";
+      try {
+        await submitOutcome(tradeId, outcome, category, reason);
+        msg.textContent = `Marked as ${outcome}.`;
+        onDone(outcome);
+      } catch (e) {
+        msg.textContent = "";
+        setError(e.message || String(e));
+        setBusy(false);
+      }
+    }
+
+    function choose(outcome) {
+      setError("");
+      form.replaceChildren();
+      const sel = el("select");
+      for (const [v, t] of CATEGORIES) {
+        const o = el("option", null, t);
+        o.value = v;
+        sel.append(o);
+      }
+      const ta = el("textarea");
+      ta.maxLength = MAX_REASON;
+      ta.rows = 3;
+      ta.placeholder = "Short post-mortem reason (optional)";
+      const count = el("div", "muted small", `0/${MAX_REASON}`);
+      ta.addEventListener("input", () => (count.textContent = `${ta.value.length}/${MAX_REASON}`));
+      const actions = el("div", "row");
+      const save = el("button", "primary-sm", "Save");
+      const skip = el("button", "secondary", "Skip");
+      save.type = skip.type = "button";
+      save.addEventListener("click", () => finish(outcome, sel.value, ta.value.trim()));
+      skip.addEventListener("click", () => finish(outcome, "", ""));
+      actions.append(save, skip);
+      form.append(el("div", "small", `Why ${outcome}? (optional)`), sel, ta, count, actions);
+      form.hidden = false;
+      msg.textContent = "";
+    }
+
+    wrap.append(btns, form, msg);
+    return wrap;
+  }
+
+  function setLastTrade(id) {
+    currentTradeId = id;
     try {
-      await api(`/api/v1/trades/${currentTradeId}/outcome`, {
-        method: "PATCH",
-        body: JSON.stringify({ outcome_status: outcome }),
-      });
-      $("outcome").textContent = `Marked as ${outcome}.`;
-      currentTradeId = null;
+      if (id == null) chrome.storage.local.remove(LAST_TRADE_KEY);
+      else chrome.storage.local.set({ [LAST_TRADE_KEY]: id });
+    } catch (_) {}
+  }
+
+  function renderOutcomeWidget() {
+    const w = $("outcome-widget");
+    if (currentTradeId == null) {
+      w.replaceChildren(el("div", "muted small", "Run an analysis to mark its outcome."));
+      return;
+    }
+    const tradeId = currentTradeId;
+    w.replaceChildren(
+      el("div", "muted small", `Trade #${tradeId}`),
+      buildOutcomeControls(tradeId, () => {
+        if (currentTradeId === tradeId) setLastTrade(null);
+        $("outcome").textContent = "";
+        loadPending();
+        refreshMemory();
+      })
+    );
+  }
+
+  function ageText(iso) {
+    const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(iso || "") ? iso : (iso || "") + "Z");
+    if (isNaN(t)) return "";
+    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (m < 60) return `${m}m ago`;
+    if (m < 1440) return `${Math.floor(m / 60)}h ago`;
+    return `${Math.floor(m / 1440)}d ago`;
+  }
+
+  async function loadPending() {
+    const list = $("pending-list");
+    try {
+      const trades = await api("/api/v1/trades?outcome_status=PENDING&limit=10");
+      $("pending-count").textContent = trades.length ? `(${trades.length})` : "";
+      if (!trades.length) {
+        list.replaceChildren(el("div", "muted small", "No pending trades."));
+        return;
+      }
+      list.replaceChildren(...trades.map((t) => {
+        const row = el("div", "pending-row");
+        const head = el("div", "pending-head");
+        head.append(
+          el("strong", null, `${t.symbol} · ${t.timeframe}`),
+          el("span", "badge-sm " + String(t.signal).toLowerCase(), `${t.signal} ${Math.round(t.confidence)}%`),
+          el("span", "muted small", ageText(t.created_at))
+        );
+        row.append(
+          head,
+          el("div", "small muted", `Entry ${fmt(t.entry)} · SL ${fmt(t.sl)} · TP ${fmt(t.tp)}`),
+          buildOutcomeControls(t.id, () => {
+            if (currentTradeId === t.id) {
+              setLastTrade(null);
+              renderOutcomeWidget();
+            }
+            loadPending();
+            refreshMemory();
+          })
+        );
+        return row;
+      }));
     } catch (e) {
-      $("outcome").textContent = "";
-      setError(e.message || String(e));
-      $("win-btn").disabled = $("loss-btn").disabled = false;
+      $("pending-count").textContent = "";
+      list.replaceChildren(el("div", "muted small", "Pending trades unavailable: " + (e.message || e)));
     }
   }
 
+  let memSymbol = null;
+  let memTimeframe = null;
+
+  async function refreshMemory() {
+    if (!memSymbol || !memTimeframe) return;
+    const symbol = memSymbol, timeframe = memTimeframe;
+    try {
+      const st = await api("/api/v1/memory/stats?limit=50");
+      if (symbol !== memSymbol || timeframe !== memTimeframe) return;
+      const g = (st.by_symbol_timeframe || []).find((x) => x.symbol === symbol && x.timeframe === timeframe);
+      const lessons = (st.recent_lessons || [])
+        .filter((l) => l.symbol === symbol && l.timeframe === timeframe)
+        .slice(0, 5);
+      renderMemory({
+        symbol, timeframe,
+        wins: g ? g.wins : 0,
+        losses: g ? g.losses : 0,
+        win_rate: g ? g.win_rate : null,
+        lessons,
+      });
+    } catch (_) {
+      const li = el("li", "muted", "Memory unavailable (backend offline).");
+      $("memory-log").replaceChildren(li);
+    }
+  }
+
+  async function detectContext() {
+    try {
+      const tab = await getActiveTab();
+      const ctx = await getContext(tab);
+      if (ctx && ctx.symbol && ctx.timeframe) {
+        const changed = ctx.symbol !== memSymbol || ctx.timeframe !== memTimeframe;
+        memSymbol = ctx.symbol;
+        memTimeframe = ctx.timeframe;
+        $("pair-meta").textContent = `${memSymbol} · ${memTimeframe}`;
+        if (changed) refreshMemory();
+      }
+    } catch (_) {}
+  }
+
   $("analyze-btn").addEventListener("click", analyze);
-  $("win-btn").addEventListener("click", () => mark("WIN"));
-  $("loss-btn").addEventListener("click", () => mark("LOSS"));
-  loadSettings();
+  try {
+    chrome.tabs.onActivated.addListener(() => detectContext());
+    chrome.tabs.onUpdated.addListener((_id, info) => {
+      if (info.status === "complete") detectContext();
+    });
+  } catch (_) {}
+
+  (async () => {
+    await loadSettings();
+    try {
+      const s = await chrome.storage.local.get(LAST_TRADE_KEY);
+      if (s[LAST_TRADE_KEY] != null) currentTradeId = s[LAST_TRADE_KEY];
+    } catch (_) {}
+    renderOutcomeWidget();
+    loadPending();
+    detectContext();
+  })();
 })();
