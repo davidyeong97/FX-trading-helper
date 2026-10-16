@@ -14,9 +14,17 @@
     el.hidden = !msg;
   }
 
+  const MAX_FRAMES = 3;
+  let frames = [];
+  let primaryTf = null;
+  let busy = false;
+
   function setLoading(on, msg) {
+    busy = on;
     $("analyze-btn").disabled = on;
     $("analyze-btn").textContent = on ? "Analyzing…" : "Analyze Active Chart";
+    $("mtf-capture-btn").disabled = on;
+    renderFrames();
     $("status").textContent = on ? msg || "Working…" : "";
   }
 
@@ -197,6 +205,89 @@
         body: JSON.stringify({ image_base64, symbol, timeframe }),
       });
       render(result);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function renderFrames() {
+    const n = frames.length;
+    $("mtf-count").textContent = n ? `(${n})` : "";
+    const btn = $("mtf-analyze-btn");
+    btn.textContent = `Analyze ${n} frame${n === 1 ? "" : "s"}`;
+    btn.disabled = busy || n === 0;
+    $("mtf-chips").replaceChildren(...frames.map((f) => {
+      const chip = el("span", "chip" + (f.timeframe === primaryTf ? " primary" : ""), f.timeframe);
+      chip.title = f.timeframe === primaryTf ? "Primary timeframe" : "Click to make primary";
+      chip.addEventListener("click", () => { primaryTf = f.timeframe; renderFrames(); });
+      const x = el("button", null, "×");
+      x.type = "button";
+      x.title = "Remove";
+      x.setAttribute("aria-label", "Remove " + f.timeframe);
+      x.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        frames = frames.filter((g) => g !== f);
+        if (primaryTf === f.timeframe) primaryTf = frames.length ? frames[frames.length - 1].timeframe : null;
+        renderFrames();
+      });
+      chip.append(x);
+      return chip;
+    }));
+  }
+
+  async function captureFrame() {
+    setError("");
+    setLoading(true, "Capturing timeframe…");
+    try {
+      const tab = await getActiveTab();
+      const dataUrl = await captureChart(tab);
+      const image_base64 = await compressImage(dataUrl);
+      const ctx = await getContext(tab);
+      const symbol = ctx && ctx.symbol;
+      const timeframe = ctx && ctx.timeframe;
+      if (!symbol || !timeframe) {
+        throw new Error(
+          "Could not detect " + (!symbol ? "symbol" : "timeframe") +
+          ". Open a supported chart (TradingView, Binance, Webull) and reload the page."
+        );
+      }
+      if (frames.length && frames[0].symbol !== symbol) {
+        frames = [];
+        primaryTf = null;
+      }
+      const existing = frames.findIndex((f) => f.timeframe === timeframe);
+      if (existing >= 0) frames.splice(existing, 1);
+      else if (frames.length >= MAX_FRAMES) throw new Error(`Max ${MAX_FRAMES} frames. Remove one first.`);
+      frames.push({ symbol, timeframe, image_base64 });
+      primaryTf = timeframe;
+      $("pair-meta").textContent = `${symbol} · ${timeframe}`;
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function analyzeFrames() {
+    if (!frames.length) return;
+    setError("");
+    setLoading(true, `Analyzing ${frames.length} frame(s) with AI…`);
+    try {
+      const symbol = frames[0].symbol;
+      const timeframe = frames.some((f) => f.timeframe === primaryTf) ? primaryTf : frames[frames.length - 1].timeframe;
+      const result = await api("/api/v1/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          symbol,
+          timeframe,
+          frames: frames.map((f) => ({ timeframe: f.timeframe, image_base64: f.image_base64 })),
+        }),
+      });
+      render(result);
+      frames = [];
+      primaryTf = null;
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -409,6 +500,9 @@
   }
 
   $("analyze-btn").addEventListener("click", analyze);
+  $("mtf-capture-btn").addEventListener("click", captureFrame);
+  $("mtf-analyze-btn").addEventListener("click", analyzeFrames);
+  renderFrames();
   try {
     chrome.tabs.onActivated.addListener(() => detectContext());
     chrome.tabs.onUpdated.addListener((_id, info) => {

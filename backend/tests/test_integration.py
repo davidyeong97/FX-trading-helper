@@ -6,7 +6,11 @@ import pytest
 
 from app.services import vision_service
 
-PAYLOAD = {"image_base64": "aGVsbG8=", "symbol": "EURUSD", "timeframe": "15M"}
+OLD_PAYLOAD = {"image_base64": "aGVsbG8=", "symbol": "EURUSD", "timeframe": "15M"}
+PAYLOAD = {
+    **OLD_PAYLOAD,
+    "frames": [{"timeframe": t, "image_base64": "aGVsbG8="} for t in ("1H", "15M")],
+}
 
 
 def _analyze(client, **over):
@@ -190,3 +194,73 @@ def test_headline_injection_sanitized(client, vision, search):
     line = next(l for l in ctx.splitlines() if l.startswith("- Fed news"))
     assert len(line) <= 202 and "\x00" not in ctx and "\x07" not in ctx
     assert "\nIGNORE" not in ctx
+
+
+def _frames(*tfs):
+    return [{"timeframe": t, "image_base64": "aGVsbG8="} for t in tfs]
+
+
+def test_multi_frame_passes_all_images_to_vision(client, vision, search):
+    r = _analyze(client, frames=_frames("1H", "15M", "5M"))
+    assert r.status_code == 200
+    call = vision.calls[-1]
+    assert [f["timeframe"] for f in call["frames"]] == ["1H", "15M", "5M"]
+    assert all(f["image_base64"] == "aGVsbG8=" for f in call["frames"])
+    body = r.json()
+    assert body["timeframe"] == "15M"
+    assert body["confidence"] == 80.0
+    assert body["frame_guard"]["applied"] is False
+
+
+def test_multi_frame_without_legacy_image(client, vision, search):
+    payload = {"symbol": "EURUSD", "timeframe": "5M", "frames": _frames("5M", "1H")}
+    assert client.post("/api/v1/analyze", json=payload).status_code == 200
+
+
+def test_single_frame_caps_confidence_at_75(client, vision, search):
+    body = client.post("/api/v1/analyze", json=OLD_PAYLOAD).json()
+    assert body["confidence"] == 75.0
+    assert body["frame_guard"]["applied"] is True
+    assert body["frame_guard"]["raw_confidence"] == 80.0
+    one = _analyze(client, frames=_frames("15M")).json()
+    assert one["confidence"] == 75.0
+
+
+def test_more_than_three_frames_rejected(client, vision, search):
+    assert _analyze(client, frames=_frames("1M", "5M", "15M", "1H")).status_code == 422
+
+
+def test_frames_must_be_unique_and_include_primary(client, vision, search):
+    assert _analyze(client, frames=_frames("15M", "15M")).status_code == 422
+    assert _analyze(client, frames=_frames("5M", "1H")).status_code == 422
+
+
+def test_old_payload_still_works(client, vision, search):
+    r = client.post("/api/v1/analyze", json=OLD_PAYLOAD)
+    assert r.status_code == 200
+    call = vision.calls[-1]
+    assert call["image_base64"] == "aGVsbG8="
+    assert [f["timeframe"] for f in call["frames"]] == ["15M"]
+
+
+def test_vision_service_sends_all_images(monkeypatch):
+    from app.config import settings
+
+    sent = []
+    monkeypatch.setattr(settings, "LLM_API_KEY", "k")
+    for provider, raw in (("gemini", None), ("claude", None)):
+        monkeypatch.setattr(settings, "LLM_PROVIDER", provider)
+        monkeypatch.setattr(vision_service, "_post", lambda url, h, payload: sent.append(payload) or (
+            {"candidates": [{"content": {"parts": [{"text": "{}"}]}}]} if provider == "gemini"
+            else {"content": [{"type": "text", "text": "{}"}]}))
+        with pytest.raises(vision_service.VisionValidationError):
+            vision_service.analyze_chart(
+                None, "EURUSD", "15M",
+                frames=[{"timeframe": "1H", "image_base64": "aGVsbG8="},
+                        {"timeframe": "15M", "image_base64": "aGVsbG8="}],
+            )
+    g, c = sent
+    assert sum("inline_data" in p for p in g["contents"][0]["parts"]) == 2
+    assert "1H" in str(g["contents"][0]["parts"])
+    assert sum(b["type"] == "image" for b in c["messages"][0]["content"]) == 2
+    assert "1H, 15M" in str(c["messages"][0]["content"])
