@@ -17,7 +17,7 @@ Round trip = capture -> compress -> upload -> LLM vision call -> Tavily search -
 | Multi-timeframe | Each extra frame (max 3 via `frames[]`) adds one more image to the LLM request: input tokens, upload size and LLM latency grow roughly linearly per image (expect ~+0.5-1 s per extra frame on Gemini Flash; unmeasured, confirm on a live key). The 3 s target is for single-frame analysis; use 2-3 frames when accuracy matters more than speed. A single frame caps BUY/SELL confidence at 75 (`frame_guard` in response). |
 | Search | Sentiment is fetched before the vision call, concurrently with the memory lookup, and fed into the prompt. Tavily has a 2 s timeout (`SEARCH_TIMEOUT_SECONDS`, default 2.0) and 120 s cache; cached/degraded path adds ~0 ms. High-impact news caps BUY/SELL confidence at 60 (`news_guard` in response). |
 
-The backend sniffs JPEG/PNG/WebP magic bytes and sends the correct MIME type to Gemini/Claude.
+The backend sniffs JPEG/PNG/WebP magic bytes and sends the correct MIME type to the provider (OpenRouter/Gemini/Claude).
 
 ## Prompt changes (`vision_service.SYSTEM_PROMPT`)
 - Breakout discipline: require a candle *close* beyond the level with a solid body; wicks = sweep/fakeout.
